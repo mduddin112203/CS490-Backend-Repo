@@ -25,6 +25,41 @@ router.get('/top-rented', async (req, res) => {
   }
 });
 
+// Search films by title, actor name, or genre
+router.get('/search', async (req, res) => {
+  try {
+    const { q: searchQuery } = req.query;
+    
+    if (!searchQuery || searchQuery.trim() === '') {
+      return res.json([]);
+    }
+    
+    const searchTerm = `%${searchQuery.trim()}%`;
+    
+    const query = `
+      SELECT DISTINCT f.film_id, f.title, f.description, f.release_year, f.rating, f.length, f.rental_rate, f.replacement_cost, c.name AS category_name
+      FROM film AS f
+      JOIN film_category AS fc ON fc.film_id = f.film_id
+      JOIN category AS c ON c.category_id = fc.category_id
+      LEFT JOIN film_actor AS fa ON fa.film_id = f.film_id
+      LEFT JOIN actor AS a ON a.actor_id = fa.actor_id
+      WHERE f.title LIKE ? 
+         OR a.first_name LIKE ? 
+         OR a.last_name LIKE ? 
+         OR CONCAT(a.first_name, ' ', a.last_name) LIKE ?
+         OR c.name LIKE ?
+      ORDER BY f.title
+      LIMIT 50
+    `;
+    
+    const [rows] = await db.execute(query, [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm]);
+    res.json(rows);
+  } catch (error) {
+    console.error('Error searching films:', error);
+    res.status(500).json({ error: 'Failed to search films' });
+  }
+});
+
 // Get film details by ID
 router.get('/:id', async (req, res) => {
   try {
