@@ -22,4 +22,49 @@ router.get('/top', async (req, res) => {
   }
 });
 
+// Get actor details by ID with their top 5 rented films
+router.get('/:id', async (req, res) => {
+  try {
+    const actorId = req.params.id;
+    
+    // Get actor details
+    const actorQuery = `
+      SELECT a.actor_id, a.first_name, a.last_name
+      FROM actor AS a
+      WHERE a.actor_id = ?
+    `;
+    
+    const [actorRows] = await db.execute(actorQuery, [actorId]);
+    
+    if (actorRows.length === 0) {
+      return res.status(404).json({ error: 'Actor not found' });
+    }
+    
+    // Get actor's top 5 rented films
+    const filmsQuery = `
+      SELECT f.film_id, f.title, c.name AS category_name, COUNT(r.rental_id) AS rental_count
+      FROM film AS f
+      JOIN film_actor AS fa ON fa.film_id = f.film_id
+      JOIN film_category AS fc ON fc.film_id = f.film_id
+      JOIN category AS c ON c.category_id = fc.category_id
+      JOIN inventory AS i ON i.film_id = f.film_id
+      LEFT JOIN rental AS r ON r.inventory_id = i.inventory_id
+      WHERE fa.actor_id = ?
+      GROUP BY f.film_id, f.title, c.name
+      ORDER BY rental_count DESC, f.title
+      LIMIT 5
+    `;
+    
+    const [filmRows] = await db.execute(filmsQuery, [actorId]);
+    
+    const actor = actorRows[0];
+    actor.top_films = filmRows;
+    
+    res.json(actor);
+  } catch (error) {
+    console.error('Error fetching actor details:', error);
+    res.status(500).json({ error: 'Failed to fetch actor details' });
+  }
+});
+
 module.exports = router;
