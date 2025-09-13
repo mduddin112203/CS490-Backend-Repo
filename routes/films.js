@@ -89,10 +89,38 @@ router.get('/:id', async (req, res) => {
       ORDER BY a.last_name, a.first_name
     `;
     
-    const [actorRows] = await db.execute(actorsQuery, [filmId]);
+    // Get rental statistics for this film
+    const rentalStatsQuery = `
+      SELECT 
+        COUNT(r.rental_id) AS total_rentals,
+        COUNT(DISTINCT r.customer_id) AS unique_customers,
+        AVG(DATEDIFF(r.return_date, r.rental_date)) AS avg_rental_duration
+      FROM inventory AS i
+      LEFT JOIN rental AS r ON r.inventory_id = i.inventory_id
+      WHERE i.film_id = ?
+    `;
+    
+    // Get inventory information
+    const inventoryQuery = `
+      SELECT 
+        COUNT(i.inventory_id) AS total_copies,
+        COUNT(CASE WHEN r.rental_id IS NOT NULL AND r.return_date IS NULL THEN 1 END) AS rented_copies,
+        COUNT(CASE WHEN r.return_date IS NOT NULL OR r.rental_id IS NULL THEN 1 END) AS available_copies
+      FROM inventory AS i
+      LEFT JOIN rental AS r ON r.inventory_id = i.inventory_id AND r.return_date IS NULL
+      WHERE i.film_id = ?
+    `;
+    
+    const [actorRows, rentalStatsRows, inventoryRows] = await Promise.all([
+      db.execute(actorsQuery, [filmId]),
+      db.execute(rentalStatsQuery, [filmId]),
+      db.execute(inventoryQuery, [filmId])
+    ]);
     
     const film = filmRows[0];
-    film.actors = actorRows;
+    film.actors = actorRows[0];
+    film.rental_stats = rentalStatsRows[0];
+    film.inventory = inventoryRows[0];
     
     res.json(film);
   } catch (error) {
