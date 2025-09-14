@@ -129,4 +129,62 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Rent a film to a customer
+router.post('/:id/rent', async (req, res) => {
+  try {
+    const filmId = req.params.id;
+    const { customer_id } = req.body;
+    
+    if (!customer_id) {
+      return res.status(400).json({ error: 'Customer ID is required' });
+    }
+    
+    // Check if customer exists
+    const customerQuery = 'SELECT customer_id FROM customer WHERE customer_id = ?';
+    const [customerRows] = await db.execute(customerQuery, [customer_id]);
+    
+    if (customerRows.length === 0) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    
+    // Find available inventory for this film
+    const inventoryQuery = `
+      SELECT i.inventory_id 
+      FROM inventory AS i
+      LEFT JOIN rental AS r ON r.inventory_id = i.inventory_id AND r.return_date IS NULL
+      WHERE i.film_id = ? AND r.rental_id IS NULL
+      LIMIT 1
+    `;
+    
+    const [inventoryRows] = await db.execute(inventoryQuery, [filmId]);
+    
+    if (inventoryRows.length === 0) {
+      return res.status(400).json({ error: 'No available copies of this film' });
+    }
+    
+    const inventoryId = inventoryRows[0].inventory_id;
+    
+    // Create rental record
+    const rentalQuery = `
+      INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id, return_date)
+      VALUES (NOW(), ?, ?, 1, NULL)
+    `;
+    
+    const [result] = await db.execute(rentalQuery, [inventoryId, customer_id]);
+    
+    res.json({
+      success: true,
+      message: 'Film rented successfully',
+      rental_id: result.insertId,
+      inventory_id: inventoryId,
+      customer_id: customer_id,
+      rental_date: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Error renting film:', error);
+    res.status(500).json({ error: 'Failed to rent film' });
+  }
+});
+
 module.exports = router;
