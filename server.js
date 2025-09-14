@@ -5,6 +5,7 @@ const config = require('./config');
 // Import routes
 const filmsRoutes = require('./routes/films');
 const actorsRoutes = require('./routes/actors');
+const customersRoutes = require('./routes/customers');
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.use(express.json());
 // Routes
 app.use('/api/films', filmsRoutes);
 app.use('/api/actors', actorsRoutes);
+app.use('/api/customers', customersRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
