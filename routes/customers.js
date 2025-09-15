@@ -100,4 +100,35 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Create a new customer with minimal required fields
+router.post('/', async (req, res) => {
+  try {
+    const { first_name, last_name, email, store_id = 1 } = req.body;
+    if (!first_name || !last_name || !email) {
+      return res.status(400).json({ error: 'first_name, last_name and email are required' });
+    }
+
+    // Insert with a placeholder address if schema requires address_id
+    // Ensure an address exists; create a simple temporary address in city 1 if needed
+    const [addrRows] = await db.execute('SELECT address_id FROM address LIMIT 1');
+    let addressId = addrRows.length ? addrRows[0].address_id : null;
+    if (!addressId) {
+      const [addrIns] = await db.execute(
+        "INSERT INTO address (address, address2, district, city_id, postal_code, phone, location, last_update) VALUES ('TBD', '', 'TBD', 1, NULL, NULL, ST_GeomFromText('POINT(0 0)'), NOW())"
+      );
+      addressId = addrIns.insertId;
+    }
+
+    const [result] = await db.execute(
+      'INSERT INTO customer (store_id, first_name, last_name, email, address_id, active, create_date) VALUES (?, ?, ?, ?, ?, 1, NOW())',
+      [store_id, first_name, last_name, email, addressId]
+    );
+
+    res.status(201).json({ customer_id: result.insertId, message: 'Customer created' });
+  } catch (error) {
+    console.error('Error creating customer:', error);
+    res.status(500).json({ error: 'Failed to create customer' });
+  }
+});
+
 module.exports = router;
