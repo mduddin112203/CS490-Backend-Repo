@@ -132,10 +132,16 @@ router.get('/:id', async (req, res) => {
   try {
     const customerId = req.params.id;
     
+    // Get customer details
     const customerQuery = `
-      SELECT customer_id, first_name, last_name, email, active, create_date, last_update
-      FROM customer
-      WHERE customer_id = ?
+      SELECT c.customer_id, c.first_name, c.last_name, c.email, c.active, c.create_date,
+             a.address, a.district, a.postal_code, a.phone,
+             ci.city, co.country
+      FROM customer AS c
+      JOIN address AS a ON a.address_id = c.address_id
+      JOIN city AS ci ON ci.city_id = a.city_id
+      JOIN country AS co ON co.country_id = ci.country_id
+      WHERE c.customer_id = ?
     `;
     
     const [customerRows] = await db.execute(customerQuery, [customerId]);
@@ -145,20 +151,23 @@ router.get('/:id', async (req, res) => {
     }
     
     // Get customer's rental history
-    const rentalsQuery = `
-      SELECT r.rental_id, r.rental_date, r.return_date, f.title, f.film_id
+    const rentalQuery = `
+      SELECT r.rental_id, r.rental_date, r.return_date, r.last_update,
+             f.film_id, f.title, c.name AS category_name,
+             CASE WHEN r.return_date IS NULL THEN 'Rented' ELSE 'Returned' END AS status
       FROM rental AS r
       JOIN inventory AS i ON i.inventory_id = r.inventory_id
       JOIN film AS f ON f.film_id = i.film_id
+      JOIN film_category AS fc ON fc.film_id = f.film_id
+      JOIN category AS c ON c.category_id = fc.category_id
       WHERE r.customer_id = ?
       ORDER BY r.rental_date DESC
-      LIMIT 10
     `;
     
-    const [rentals] = await db.execute(rentalsQuery, [customerId]);
+    const [rentalRows] = await db.execute(rentalQuery, [customerId]);
     
     const customer = customerRows[0];
-    customer.recent_rentals = rentals;
+    customer.rental_history = rentalRows;
     
     res.json(customer);
   } catch (error) {
@@ -326,6 +335,37 @@ router.delete('/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting customer:', error);
     res.status(500).json({ error: 'Failed to delete customer' });
+  }
+});
+
+// Return a rental
+router.post('/:id/return-rental', async (req, res) => {
+  try {
+    const customerId = req.params.id;
+    const { rental_id } = req.body;
+    
+    if (!rental_id) {
+      return res.status(400).json({ error: 'Rental ID is required' });
+    }
+    
+    const query = `
+      UPDATE rental 
+      SET return_date = NOW(), last_update = NOW()
+      WHERE rental_id = ? AND customer_id = ? AND return_date IS NULL
+    `;
+    
+    const [result] = await db.execute(query, [rental_id, customerId]);
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ 
+        error: 'Rental not found or already returned' 
+      });
+    }
+    
+    res.json({ message: 'Rental returned successfully' });
+  } catch (error) {
+    console.error('Error returning rental:', error);
+    res.status(500).json({ error: 'Failed to return rental' });
   }
 });
 
