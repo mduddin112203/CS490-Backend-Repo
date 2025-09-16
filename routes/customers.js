@@ -131,4 +131,41 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Edit/update customer details
+router.put('/:id', async (req, res) => {
+  try {
+    const customerId = req.params.id;
+    const { first_name, last_name, email, active } = req.body;
+    
+    if (!first_name || !last_name || !email) {
+      return res.status(400).json({ error: 'first_name, last_name and email are required' });
+    }
+
+    // Check if customer exists
+    const [existingCustomer] = await db.execute(
+      'SELECT customer_id FROM customer WHERE customer_id = ?',
+      [customerId]
+    );
+
+    if (existingCustomer.length === 0) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    // Update customer details
+    const [result] = await db.execute(
+      'UPDATE customer SET first_name = ?, last_name = ?, email = ?, active = ?, last_update = NOW() WHERE customer_id = ?',
+      [first_name, last_name, email, active !== undefined ? active : 1, customerId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    res.json({ message: 'Customer updated successfully' });
+  } catch (error) {
+    console.error('Error updating customer:', error);
+    res.status(500).json({ error: 'Failed to update customer' });
+  }
+});
+
 module.exports = router;
