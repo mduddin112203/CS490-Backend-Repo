@@ -295,4 +295,38 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// Delete customer
+router.delete('/:id', async (req, res) => {
+  try {
+    const customerId = req.params.id;
+    
+    // Check if customer has active rentals
+    const rentalCheckQuery = `
+      SELECT COUNT(*) as active_rentals
+      FROM rental
+      WHERE customer_id = ? AND return_date IS NULL
+    `;
+    
+    const [rentalCheck] = await db.execute(rentalCheckQuery, [customerId]);
+    
+    if (rentalCheck[0].active_rentals > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete customer with active rentals. Please return all rentals first.' 
+      });
+    }
+    
+    const query = `DELETE FROM customer WHERE customer_id = ?`;
+    const [result] = await db.execute(query, [customerId]);
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    
+    res.json({ message: 'Customer deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting customer:', error);
+    res.status(500).json({ error: 'Failed to delete customer' });
+  }
+});
+
 module.exports = router;
