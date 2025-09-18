@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../database');
 const router = express.Router();
 
-// Get top 5 rented films
+// Get top 5 rented films of all time
 router.get('/top-rented', async (req, res) => {
   try {
     const query = `
@@ -85,9 +85,11 @@ router.get('/:id', async (req, res) => {
   try {
     const filmId = req.params.id;
     
-    // Get film details
+    // Get film details with category
     const filmQuery = `
-      SELECT f.film_id, f.title, f.description, f.release_year, f.rating, f.length, f.rental_rate, f.replacement_cost, c.name AS category_name
+      SELECT f.film_id, f.title, f.description, f.release_year, f.rating, 
+             f.special_features, f.rental_duration, f.rental_rate, f.replacement_cost,
+             c.name AS category_name
       FROM film AS f
       JOIN film_category AS fc ON fc.film_id = f.film_id
       JOIN category AS c ON c.category_id = fc.category_id
@@ -109,101 +111,35 @@ router.get('/:id', async (req, res) => {
       ORDER BY a.last_name, a.first_name
     `;
     
-    // Get rental statistics for this film
-    const rentalStatsQuery = `
-      SELECT 
-        COUNT(r.rental_id) AS total_rentals,
-        COUNT(DISTINCT r.customer_id) AS unique_customers,
-        AVG(DATEDIFF(r.return_date, r.rental_date)) AS avg_rental_duration
-      FROM inventory AS i
-      JOIN rental AS r ON r.inventory_id = i.inventory_id
-      WHERE i.film_id = ?
-    `;
+    const [actorRows] = await db.execute(actorsQuery, [filmId]);
     
-    // Get inventory information
+    // Get inventory count by store (only available copies)
     const inventoryQuery = `
-      SELECT 
-        COUNT(i.inventory_id) AS total_copies,
-        COUNT(CASE WHEN r.rental_id IS NOT NULL AND r.return_date IS NULL THEN 1 END) AS rented_copies,
-        COUNT(CASE WHEN r.return_date IS NOT NULL OR r.rental_id IS NULL THEN 1 END) AS available_copies
-      FROM inventory AS i
-      JOIN rental AS r ON r.inventory_id = i.inventory_id AND r.return_date IS NULL
-      WHERE i.film_id = ?
+      SELECT s.store_id, 
+             COUNT(CASE 
+               WHEN i.inventory_id IS NOT NULL 
+                    AND NOT EXISTS(
+                      SELECT 1 FROM rental r 
+                      WHERE r.inventory_id = i.inventory_id 
+                      AND r.return_date IS NULL
+                    ) 
+               THEN 1 
+               END) AS available_copies
+      FROM store AS s
+      LEFT JOIN inventory AS i ON i.store_id = s.store_id AND i.film_id = ?
+      GROUP BY s.store_id
     `;
     
-    const [actorRows, rentalStatsRows, inventoryRows] = await Promise.all([
-      db.execute(actorsQuery, [filmId]),
-      db.execute(rentalStatsQuery, [filmId]),
-      db.execute(inventoryQuery, [filmId])
-    ]);
+    const [inventoryRows] = await db.execute(inventoryQuery, [filmId]);
     
     const film = filmRows[0];
-    film.actors = actorRows[0];
-    film.rental_stats = rentalStatsRows[0];
-    film.inventory = inventoryRows[0];
+    film.actors = actorRows;
+    film.inventory = inventoryRows;
     
     res.json(film);
   } catch (error) {
     console.error('Error fetching film details:', error);
     res.status(500).json({ error: 'Failed to fetch film details' });
-  }
-});
-
-// Rent a film to a customer
-router.post('/:id/rent', async (req, res) => {
-  try {
-    const filmId = req.params.id;
-    const { customer_id } = req.body;
-    
-    if (!customer_id) {
-      return res.status(400).json({ error: 'Customer ID is required' });
-    }
-    
-    // Check if customer exists
-    const customerQuery = 'SELECT customer_id FROM customer WHERE customer_id = ?';
-    const [customerRows] = await db.execute(customerQuery, [customer_id]);
-    
-    if (customerRows.length === 0) {
-      return res.status(404).json({ error: 'Customer not found' });
-    }
-    
-    // Find available inventory for this film
-    const inventoryQuery = `
-      SELECT i.inventory_id 
-      FROM inventory AS i
-      JOIN rental AS r ON r.inventory_id = i.inventory_id AND r.return_date IS NULL
-      WHERE i.film_id = ? AND r.rental_id IS NULL
-      LIMIT 1
-    `;
-    
-    const [inventoryRows] = await db.execute(inventoryQuery, [filmId]);
-    
-    if (inventoryRows.length === 0) {
-      return res.status(400).json({ error: 'No available copies of this film' });
-    }
-    
-    const inventoryId = inventoryRows[0].inventory_id;
-    
-    // Create rental record
-    const rentalQuery = `
-      INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id, return_date)
-      VALUES (NOW(), ?, ?, 1, NULL)
-    `;
-    
-    const [result] = await db.execute(rentalQuery, [inventoryId, customer_id]);
-    
-    res.json({
-      success: true,
-      message: 'Film rented successfully',
-      rental_id: result.insertId,
-      inventory_id: inventoryId,
-      customer_id: customer_id,
-      rental_date: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('Error renting film:', error);
-    res.status(500).json({ error: 'Failed to rent film' });
   }
 });
 
@@ -248,6 +184,59 @@ router.get('/', async (req, res) => {
   } catch (error) {
     console.error('Error fetching films:', error);
     res.status(500).json({ error: 'Failed to fetch films' });
+  }
+});
+
+// Rent a film to a customer
+router.post('/:id/rent', async (req, res) => {
+  try {
+    const filmId = req.params.id;
+    const { customer_id, store_id } = req.body;
+    
+    if (!customer_id || !store_id) {
+      return res.status(400).json({ error: 'Customer ID and Store ID are required' });
+    }
+    
+    // Find available inventory for the film at the specified store
+    const inventoryQuery = `
+      SELECT i.inventory_id
+      FROM inventory AS i
+      WHERE i.film_id = ? 
+        AND i.store_id = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM rental AS r 
+          WHERE r.inventory_id = i.inventory_id 
+          AND r.return_date IS NULL
+        )
+      LIMIT 1
+    `;
+    
+    const [inventoryRows] = await db.execute(inventoryQuery, [filmId, store_id]);
+    
+    if (inventoryRows.length === 0) {
+      return res.status(400).json({ error: 'No available copies of this film at the specified store' });
+    }
+    
+    const inventoryId = inventoryRows[0].inventory_id;
+    
+    // Create rental record
+    const rentalQuery = `
+      INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id)
+      VALUES (NOW(), ?, ?, 1)
+    `;
+    
+    await db.execute(rentalQuery, [inventoryId, customer_id]);
+    
+    res.json({ 
+      message: 'Film rented successfully',
+      inventory_id: inventoryId,
+      customer_id: customer_id,
+      rental_date: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Error renting film:', error);
+    res.status(500).json({ error: 'Failed to rent film' });
   }
 });
 
