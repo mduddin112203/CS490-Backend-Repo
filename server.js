@@ -29,12 +29,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// 404 handler
+// 404 handler - Using a different approach
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-const PORT = process.env.PORT || 5001;
+const PORT = config.port;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
