@@ -187,4 +187,48 @@ router.post('/:id/rent', async (req, res) => {
   }
 });
 
+// Get all films with pagination
+router.get('/', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+    
+    const query = `
+      SELECT f.film_id, f.title, c.name AS category_name, f.rating, f.rental_rate
+      FROM film AS f
+      JOIN film_category AS fc ON fc.film_id = f.film_id
+      JOIN category AS c ON c.category_id = fc.category_id
+      ORDER BY f.title
+      LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}
+    `;
+    
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM film AS f
+      JOIN film_category AS fc ON fc.film_id = f.film_id
+      JOIN category AS c ON c.category_id = fc.category_id
+    `;
+    
+    const [rows] = await db.execute(query);
+    const [countResult] = await db.execute(countQuery);
+    
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / limit);
+    
+    res.json({
+      films: rows,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems: total,
+        itemsPerPage: limit
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching films:', error);
+    res.status(500).json({ error: 'Failed to fetch films' });
+  }
+});
+
 module.exports = router;
