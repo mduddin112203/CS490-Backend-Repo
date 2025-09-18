@@ -197,17 +197,12 @@ router.post('/:id/rent', async (req, res) => {
       return res.status(400).json({ error: 'Customer ID and Store ID are required' });
     }
     
-    // Find available inventory for the film at the specified store
+    // Find available inventory for this film at the specified store
     const inventoryQuery = `
       SELECT i.inventory_id
-      FROM inventory AS i
-      WHERE i.film_id = ? 
-        AND i.store_id = ?
-        AND NOT EXISTS (
-          SELECT 1 FROM rental AS r 
-          WHERE r.inventory_id = i.inventory_id 
-          AND r.return_date IS NULL
-        )
+      FROM inventory i
+      LEFT JOIN rental r ON r.inventory_id = i.inventory_id AND r.return_date IS NULL
+      WHERE i.film_id = ? AND i.store_id = ? AND r.rental_id IS NULL
       LIMIT 1
     `;
     
@@ -221,17 +216,16 @@ router.post('/:id/rent', async (req, res) => {
     
     // Create rental record
     const rentalQuery = `
-      INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id)
-      VALUES (NOW(), ?, ?, 1)
+      INSERT INTO rental (inventory_id, customer_id, staff_id, rental_date)
+      VALUES (?, ?, 1, NOW())
     `;
     
-    await db.execute(rentalQuery, [inventoryId, customer_id]);
+    const [result] = await db.execute(rentalQuery, [inventoryId, customer_id]);
     
-    res.json({ 
+    res.status(201).json({
       message: 'Film rented successfully',
-      inventory_id: inventoryId,
-      customer_id: customer_id,
-      rental_date: new Date().toISOString()
+      rental_id: result.insertId,
+      inventory_id: inventoryId
     });
     
   } catch (error) {
