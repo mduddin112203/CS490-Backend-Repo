@@ -69,13 +69,15 @@ router.get('/:id/top-rented-films', async (req, res) => {
     const actorId = req.params.id;
     
     const query = `
-      SELECT f.film_id, f.title, COUNT(r.rental_id) AS rental_count
+      SELECT f.film_id, f.title, c.name AS category_name, COUNT(r.rental_id) AS rental_count
       FROM film AS f
       JOIN film_actor AS fa ON fa.film_id = f.film_id
+      JOIN film_category AS fc ON fc.film_id = f.film_id
+      JOIN category AS c ON c.category_id = fc.category_id
       JOIN inventory AS i ON i.film_id = f.film_id
       LEFT JOIN rental AS r ON r.inventory_id = i.inventory_id
       WHERE fa.actor_id = ?
-      GROUP BY f.film_id, f.title
+      GROUP BY f.film_id, f.title, c.name
       ORDER BY rental_count DESC, f.title
       LIMIT 5
     `;
@@ -112,3 +114,4 @@ router.get('/search/:query', async (req, res) => {
 });
 
 module.exports = router;
+
