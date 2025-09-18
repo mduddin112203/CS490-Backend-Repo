@@ -2,57 +2,38 @@ const express = require('express');
 const db = require('../database');
 const router = express.Router();
 
-// Get all customers with pagination and search
+// Get all customers with pagination
 router.get('/', async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
-    const search = req.query.search || '';
     const offset = (page - 1) * limit;
     
-    let whereClause = '';
-    let queryParams = [];
-    
-    // Add search functionality
-    if (search.trim()) {
-      whereClause = `
-        WHERE customer_id LIKE ? 
-           OR first_name LIKE ? 
-           OR last_name LIKE ? 
-           OR CONCAT(first_name, ' ', last_name) LIKE ?
-      `;
-      const searchTerm = `%${search.trim()}%`;
-      queryParams = [searchTerm, searchTerm, searchTerm, searchTerm];
-    }
-    
-    // Get total count for pagination
-    const countQuery = `SELECT COUNT(*) as total FROM customer ${whereClause}`;
-    const [countRows] = await db.execute(countQuery, queryParams);
-    const totalCustomers = countRows[0].total;
-    const totalPages = Math.ceil(totalCustomers / limit);
-    
-    // Get customers with pagination and search
-    const customersQuery = `
+    const query = `
       SELECT customer_id, first_name, last_name, email, active, create_date
       FROM customer
-      ${whereClause}
       ORDER BY last_name, first_name
-      LIMIT ? OFFSET ?
+      LIMIT ${parseInt(limit)} OFFSET ${parseInt(offset)}
     `;
     
-    const [customers] = await db.execute(customersQuery, [...queryParams, limit, offset]);
+    const countQuery = `
+      SELECT COUNT(*) as total FROM customer
+    `;
+    
+    const [rows] = await db.execute(query);
+    const [countResult] = await db.execute(countQuery);
+    
+    const total = countResult[0].total;
+    const totalPages = Math.ceil(total / limit);
     
     res.json({
-      customers,
+      customers: rows,
       pagination: {
         currentPage: page,
         totalPages,
-        totalCustomers,
-        limit,
-        hasNext: page < totalPages,
-        hasPrev: page > 1
-      },
-      search: search.trim()
+        totalItems: total,
+        itemsPerPage: limit
+      }
     });
   } catch (error) {
     console.error('Error fetching customers:', error);
