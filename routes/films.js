@@ -11,7 +11,7 @@ router.get('/top-rented', async (req, res) => {
       JOIN film_category AS fc ON fc.film_id = f.film_id
       JOIN category AS c ON c.category_id = fc.category_id
       JOIN inventory AS i ON i.film_id = f.film_id
-      LEFT JOIN rental AS r ON r.inventory_id = i.inventory_id
+      JOIN rental AS r ON r.inventory_id = i.inventory_id
       GROUP BY f.film_id, f.title, c.name
       ORDER BY rental_count DESC, f.title
       LIMIT 5
@@ -96,7 +96,7 @@ router.get('/:id', async (req, res) => {
         COUNT(DISTINCT r.customer_id) AS unique_customers,
         AVG(DATEDIFF(r.return_date, r.rental_date)) AS avg_rental_duration
       FROM inventory AS i
-      LEFT JOIN rental AS r ON r.inventory_id = i.inventory_id
+      JOIN rental AS r ON r.inventory_id = i.inventory_id
       WHERE i.film_id = ?
     `;
     
@@ -107,7 +107,7 @@ router.get('/:id', async (req, res) => {
         COUNT(CASE WHEN r.rental_id IS NOT NULL AND r.return_date IS NULL THEN 1 END) AS rented_copies,
         COUNT(CASE WHEN r.return_date IS NOT NULL OR r.rental_id IS NULL THEN 1 END) AS available_copies
       FROM inventory AS i
-      LEFT JOIN rental AS r ON r.inventory_id = i.inventory_id AND r.return_date IS NULL
+      JOIN rental AS r ON r.inventory_id = i.inventory_id AND r.return_date IS NULL
       WHERE i.film_id = ?
     `;
     
@@ -151,7 +151,7 @@ router.post('/:id/rent', async (req, res) => {
     const inventoryQuery = `
       SELECT i.inventory_id 
       FROM inventory AS i
-      LEFT JOIN rental AS r ON r.inventory_id = i.inventory_id AND r.return_date IS NULL
+      JOIN rental AS r ON r.inventory_id = i.inventory_id AND r.return_date IS NULL
       WHERE i.film_id = ? AND r.rental_id IS NULL
       LIMIT 1
     `;
